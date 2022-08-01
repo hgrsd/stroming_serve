@@ -716,9 +716,9 @@ dependencies = [
 
 [[package]]
 name = "stroming"
-version = "0.0.7"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6d4e21acfb14f52f58a38c20340b5e8f56360652b4c7d6dca8900d5a757e9ec"
+checksum = "915b2a12c8b2d595a5781341bd727646785913b9e4cce821e37c91ca0cc4d411"
 dependencies = [
  "uuid",
 ]

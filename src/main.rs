@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 use stroming::{
-    MemoryStreamStore, Message, ReadDirection, ReadFromStream, StreamVersion, WriteResult,
+    MemoryStreamStore, Message, ReadDirection, ReadFromStream, ReadFromCategory, StreamVersion, WriteResult,
     WriteToStream,
 };
 use warp::{hyper::StatusCode, reply::Reply, Filter};
@@ -14,6 +14,7 @@ struct StreamMessageDto {
     pub id: String,
     pub message_type: String,
     pub data: String,
+    pub metadata: String,
     pub position: String,
     pub revision: String,
 }
@@ -22,12 +23,19 @@ struct StreamMessageDto {
 struct MessageDto {
     pub message_type: String,
     pub data: Value,
+    pub metadata: Value,
 }
 
 #[derive(Deserialize)]
 struct WriteStreamDto {
     pub messages: Vec<MessageDto>,
     pub expected_version: String,
+}
+
+#[derive(Deserialize)]
+struct ReadCategoryDto {
+    pub offset: String,
+    pub max: String,
 }
 
 #[derive(Serialize)]
@@ -46,6 +54,7 @@ struct ReadStreamResponse {
 async fn main() {
     let store = Arc::new(RwLock::new(MemoryStreamStore::new()));
     let read_s = store.clone();
+    let category_s = store.clone();
     let write_s = store.clone();
 
     let read_stream = warp::get()
@@ -68,6 +77,7 @@ async fn main() {
                             id: m.id.clone(),
                             message_type: m.message_type.clone(),
                             data: String::from_utf8(m.data.clone()).unwrap(),
+                            metadata: String::from_utf8(m.metadata.clone()).unwrap(),
                             position: m.position.position.to_string(),
                             revision: m.position.revision.to_string(),
                         })
@@ -79,6 +89,29 @@ async fn main() {
                 }
             };
             warp::reply::json(&response)
+        });
+
+    let read_category = warp::get()
+        .and(warp::path("category"))
+        .and(warp::path::param())
+        .and(warp::body::json())
+        .map(move |category: String, dto: ReadCategoryDto| {
+            let offset: usize = dto.offset.parse().unwrap();
+            let max: usize = dto.max.parse().unwrap();
+            let messages = category_s
+                .read()
+                .unwrap().read_from_category(&category, offset, Some(max));
+            let dtos: Vec<StreamMessageDto> = messages
+                .into_iter()
+                .map(|m| StreamMessageDto {
+                    id: m.id.clone(),
+                    message_type: m.message_type.clone(),
+                    data: String::from_utf8(m.data.clone()).unwrap(),
+                    metadata: String::from_utf8(m.metadata.clone()).unwrap(),
+                    position: m.position.position.to_string(),
+                    revision: m.position.revision.to_string(),
+                }).collect();
+            warp::reply::json(&dtos)
         });
 
     let write_stream = warp::post()
@@ -98,6 +131,7 @@ async fn main() {
                 .map(|m| Message {
                     message_type: m.message_type,
                     data: m.data.to_string().as_bytes().to_vec(),
+                    metadata: m.metadata.to_string().as_bytes().to_vec(),
                 })
                 .collect();
             let append_result =
@@ -121,7 +155,7 @@ async fn main() {
             }
         });
 
-    warp::serve(read_stream.or(write_stream))
+    warp::serve(read_stream.or(read_category).or(write_stream))
         .run(([127, 0, 0, 1], 3333))
         .await
 }
